@@ -17,6 +17,29 @@
             - UserNamespacesSupport
             - UserNamespacesPodSecurityStandards
 
+# TODO - better install process
+# - name: Install DevSpaces Operator
+#   include_tasks: ./install_operator.yml
+#   vars:
+#     install_operator_action: install
+#     install_operator_name: "{{ agp_devspaces_operator_devspaces_name }}"
+#     install_operator_namespace: "{{ agp_devspaces_operator_devspaces_namespace }}"
+#     install_operator_catalog: redhat-operators
+#     install_operator_channel: "{{ ocp4_workload_openshift_container_storage_ocs_channel }}"
+#     install_operator_automatic_install_plan_approval: "{{ ocp4_workload_openshift_container_storage_ocs_automatic_install_plan_approval | default(true) }}" # yamllint disable-line rule:line-length
+#     install_operator_starting_csv: "{{ ocp4_workload_openshift_container_storage_starting_csv }}"
+#     install_operator_packagemanifest_name: "{{ ocp4_workload_openshift_container_storage_ocs_operator_name }}"
+#     install_operator_manage_namespaces:
+#       - {{ install_operator_namespace }}
+#     install_operator_catalogsource_setup: "{{ ocp4_workload_openshift_container_storage_ocs_catalogsource_setup | default(false)}}"
+#     install_operator_catalogsource_name: "{{ ocp4_workload_openshift_container_storage_ocs_catalogsource_name | default('') }}"
+#     install_operator_catalogsource_image: "{{ ocp4_workload_openshift_container_storage_ocs_catalogsource_image | default('') }}"
+#     install_operator_catalogsource_image_tag: "{{ ocp4_workload_openshift_container_storage_ocs_catalogsource_image_tag | default('') }}"
+#     install_operator_catalogsource_namespace: {{ install_operator_namespace }}
+#     install_operator_csv_nameprefix: "{{ ocp4_workload_openshift_container_storage_ocs_operator_name }}"
+#     install_operator_install_csv_ignore_error: false
+#     install_operator_catalogsource_pullsecrets: []
+
 - name: Role agp_devspaces | Task workload | Create Devspaces OperatorGroup
   when: agp_devspaces_operator_group_create
   kubernetes.core.k8s:
@@ -70,18 +93,44 @@
         sourceNamespace: "{{ agp_devspaces_operator_devspaces_source_namespace }}"
         startingCSV: "{{ agp_devspaces_operator_devspaces_starting_csv }}"
 
-- name: Role agp_devspaces | Task workload | Create CheCluster
-  kubernetes.core.k8s:
-    state: "{{ agp_devspaces_state }}"
-    definition:
-      apiVersion: org.eclipse.che/v2
-      kind: CheCluster
-      metadata:
-        name: devspaces
-        namespace: "{{ agp_devspaces_namespace }}"
-      spec: "{{ agp_devspaces_che_cluster_spec }}"
-  retries: 30
-  delay: 30
+- name: Role agp_devspaces | Task workload | Pause for 5 minutes to allow Operators to install
+  ansible.builtin.pause:
+    minutes: 5
+
+- name: Role agp_devspaces | Task workload | Install CheCluster
+  block:
+
+    - name: Role agp_devspaces | Task workload | Create CheCluster
+      kubernetes.core.k8s:
+        state: "{{ agp_devspaces_state }}"
+        definition:
+          apiVersion: org.eclipse.che/v2
+          kind: CheCluster
+          metadata:
+            name: devspaces
+            namespace: "{{ agp_devspaces_namespace }}"
+          spec: "{{ agp_devspaces_che_cluster_spec }}"
+      retries: 30
+      delay: 30
+
+  rescue:
+
+    - name: Role agp_devspaces | Task workload | Pause for 5 additional minutes to allow Operators to install
+      ansible.builtin.pause:
+        minutes: 5
+
+    - name: Role agp_devspaces | Task workload | Create CheCluster
+      kubernetes.core.k8s:
+        state: "{{ agp_devspaces_state }}"
+        definition:
+          apiVersion: org.eclipse.che/v2
+          kind: CheCluster
+          metadata:
+            name: devspaces
+            namespace: "{{ agp_devspaces_namespace }}"
+          spec: "{{ agp_devspaces_che_cluster_spec }}"
+      retries: 30
+      delay: 30
 
 - name: Role agp_devspaces | task workload | Deploy default workspace configurations
   when: agp_devspaces_default_workspace_config
